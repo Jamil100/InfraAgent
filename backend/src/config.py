@@ -7,7 +7,7 @@ load_dotenv(override=True)
 class Settings:
     # Azure AI Foundry
     project_endpoint: str = os.getenv("PROJECT_ENDPOINT", "")
-    model_deployment: str = os.getenv("MODEL_DEPLOYMENT_NAME", "gpt-4o")
+    model_deployment: str = os.getenv("MODEL_DEPLOYMENT_NAME", "azureml://registries/azure-openai/models/gpt-5.4-mini/versions/2026-03-17")
 
     # Azure
     subscription_id: str = os.getenv("AZURE_SUBSCRIPTION_ID", "")

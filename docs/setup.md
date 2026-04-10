@@ -66,7 +66,7 @@ Edit `.env` with your values:
 ```env
 # Azure AI Foundry — get from AI Toolkit > Microsoft Foundry Resources > your project
 PROJECT_ENDPOINT=https://<your-project>.services.ai.azure.com/api/projects/<project-id>
-MODEL_DEPLOYMENT_NAME=gpt-4o
+MODEL_DEPLOYMENT_NAME=azureml://registries/azure-openai/models/gpt-5.4-mini/versions/2026-03-17
 
 # Azure — get from az account show
 AZURE_SUBSCRIPTION_ID=<your-subscription-id>
@@ -170,7 +170,7 @@ The server launches via the `msmcp-azure` command in `.vscode/mcp.json`.
 ### Using Model Playground
 
 1. AI Toolkit → **Model Playground**
-2. Select a deployed model (e.g., `gpt-4o`)
+2. Select a deployed model (e.g., `gpt-5.4-mini`)
 3. Paste agent system prompts from `backend/src/agents/prompts/` to iterate on them
 4. Test with sample infrastructure requests
 
