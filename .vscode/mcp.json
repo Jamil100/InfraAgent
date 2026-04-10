@@ -1,0 +1,25 @@
+{
+  "servers": {
+    "bicep": {
+      "type": "http",
+      "url": "http://localhost:5007/mcp",
+      "comment": "Bicep MCP Server — install via: dotnet tool install -g Microsoft.BicepMcp"
+    },
+    "terraform": {
+      "type": "stdio",
+      "command": "docker",
+      "args": [
+        "run", "-i", "--rm",
+        "hashicorp/terraform-mcp-server:0.5.1",
+        "-toolsets=registry,terraform"
+      ],
+      "comment": "Terraform MCP Server v0.5.1 — requires Docker"
+    },
+    "azure": {
+      "type": "stdio",
+      "command": "msmcp-azure",
+      "args": [],
+      "comment": "Azure MCP Server (microsoft/mcp) — install via: pip install msmcp-azure"
+    }
+  }
+}
