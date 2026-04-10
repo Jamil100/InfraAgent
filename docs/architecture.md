@@ -53,23 +53,20 @@ Each pipeline run tracks its progress through `PipelineState.stage`:
 
 ## Clean Architecture (Ports & Adapters)
 
-```
-┌─────────────────────────────────────────────────────┐
-│                    API Layer                         │
-│  routes.py · dependencies.py                        │
-├─────────────────────────────────────────────────────┤
-│              Application / Services                  │
-│  pipeline.py (OrchestratorPipeline)                 │
-├─────────────────────────────────────────────────────┤
-│                  Domain Core                         │
-│  models.py (PipelineState, RequirementsHandoff...)  │
-│  ports.py  (ICodeGenPort, ISourceControlPort...)    │
-├─────────────────────────────────────────────────────┤
-│          Adapters (implements ports)                 │
-│  agents/codegen.py     → ICodeGenPort               │
-│  agents/reviewers.py   → IStandardsPort, ISecurityPort │
-│  adapters/github_adapter.py → ISourceControlPort    │
-└─────────────────────────────────────────────────────┘
+```mermaid
+block-beta
+  columns 1
+  block:api["API Layer\nroutes.py · dependencies.py"]
+  end
+  block:services["Application / Services\npipeline.py (OrchestratorPipeline)"]
+  end
+  block:domain["Domain Core\nmodels.py (PipelineState, RequirementsHandoff…)\nports.py (ICodeGenPort, ISourceControlPort…)"]
+  end
+  block:adapters["Adapters\nagents/codegen.py → ICodeGenPort\nagents/reviewers.py → IStandardsPort, ISecurityPort\nadapters/github_adapter.py → ISourceControlPort"]
+  end
+  api --> services
+  services --> domain
+  domain --> adapters
 ```
 
 **Key principle**: Domain models and port interfaces have zero external dependencies. Adapters can be swapped (e.g., replace `GitHubAdapter` with `AzureDevOpsAdapter`) without touching the pipeline or domain.

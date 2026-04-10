@@ -4,10 +4,22 @@
 
 ## Architecture
 
-```
-User → Chat UI → Consulting Agent → CodeGen Agent ↔ Review Loop → PR → Plan → Deploy
-                                        ↕ (max 3 iterations)
-                              Standards Agent + Security Agent
+```mermaid
+graph LR
+    User([User]) --> ChatUI[Chat UI]
+    ChatUI --> Consulting[Consulting Agent]
+    Consulting --> CodeGen[CodeGen Agent]
+
+    subgraph Loop["Review Loop (max 3×)"]
+        direction TB
+        Standards[Standards Agent]
+        Security[Security Agent]
+    end
+
+    CodeGen <-->|feedback| Loop
+    Loop -->|no errors| PR[PR Workflow]
+    PR --> Plan[Plan / What-If]
+    Plan --> Deploy[Deploy Agent]
 ```
 
 **Agents**: Consulting · CodeGen · Standards · Security · PR Workflow · Deploy  

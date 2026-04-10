@@ -2,9 +2,12 @@
 
 ## Deployment Stages
 
-```
-Local Dev → Docker Container → Azure Container Registry → Foundry Hosted Agent
-                                                        → Azure Container Apps (MCP servers)
+```mermaid
+graph LR
+    Local[Local Dev] --> Docker[Docker Container]
+    Docker --> ACR[Azure Container Registry]
+    ACR --> Foundry[Foundry Hosted Agent]
+    ACR --> ACA[Azure Container Apps\nMCP servers]
 ```
 
 ## Local Development
@@ -144,8 +147,12 @@ az containerapp create \
 
 ### Pipeline Overview
 
-```
-push/PR → lint → test → build → deploy (main only)
+```mermaid
+graph LR
+    Trigger([push / PR]) --> Lint[Lint]
+    Lint --> Test[Test]
+    Test --> Build[Build]
+    Build -->|main branch only| Deploy[Deploy]
 ```
 
 ### Workflow File
