@@ -6,6 +6,45 @@ Built for the **Capgemini Microsoft Global Partner Hackathon 2026** by Terraform
 
 ---
 
+## The Problem
+
+Provisioning cloud infrastructure correctly is hard. Engineers spend hours writing Bicep or Terraform by hand, cross-referencing Azure documentation, enforcing naming conventions, checking for security misconfigurations, and shepherding code through review before anything gets deployed. For teams with strict governance requirements this process is slow, error-prone, and difficult to scale — and a single misconfigured resource can mean public exposure, a compliance violation, or an unexpected cloud bill.
+
+The root cause is that infrastructure as code is simultaneously a **technical discipline** and a **policy-driven process**. Getting both right, every time, without a dedicated IaC expert on every team, is the gap we are solving.
+
+## Our Solution
+
+InfraAgent is a **multi-agent AI pipeline** that turns a natural-language description of what you need into a reviewed, policy-compliant, PR-ready infrastructure deployment — with humans kept in the loop at the right moments.
+
+A user describes their intent in plain English. InfraAgent handles everything else:
+
+1. **Understands** your requirements through a conversational consulting agent that asks the right clarifying questions
+2. **Generates** production-grade Bicep (or Terraform) using Azure Verified Modules, enforcing naming conventions, required tags, and Key Vault references for secrets — by default, every time
+3. **Reviews** the output through two independent AI agents: one for policy and standards, one for security posture — feeding findings back to the code generator to fix before anything reaches a human
+4. **Validates** deterministically with the real CLI tools (`az bicep lint`, `terraform validate`) so structural errors are caught before review
+5. **Seeks human approval** at two explicit gates — before creating the PR, and before deploying — so engineers stay in control of the blast radius
+6. **Deploys** through `az deployment group what-if` or `terraform plan`, then applies only after the plan has been reviewed and approved
+
+The result is audited, standards-compliant infrastructure code in minutes, not hours, with a full review trail and a GitHub pull request as the artifact.
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| **AI Platform** | Azure AI Foundry Agent Service |
+| **Model** | GPT-5.4-mini via Azure OpenAI (`azureml://registries/azure-openai/models/gpt-5.4-mini/versions/2026-03-17`) |
+| **Agent Framework** | Microsoft Agent Framework (`agent-framework`) |
+| **Backend** | Python 3.11+ · FastAPI · uvicorn |
+| **Frontend** | Next.js 15 · React 19 · TypeScript · Tailwind CSS |
+| **IaC** | Bicep (primary, AVM-first) · Terraform (secondary) |
+| **MCP Servers** | Bicep MCP · Terraform MCP · Azure MCP — tool grounding for agents |
+| **Source Control Integration** | GitHub REST API — branches, commits, pull requests |
+| **Azure SDKs** | `azure-identity` · `azure-mgmt-resource` · `azure-mgmt-network` |
+| **Auth** | `DefaultAzureCredential` (no hardcoded secrets) |
+| **Dependency Management** | uv (backend) · npm (frontend) |
+
+---
+
 ## How It Works
 
 ```mermaid
@@ -234,22 +273,6 @@ frontend/
 │   └── ApprovalGate.tsx
 └── lib/api.ts                      # Typed API client
 ```
-
----
-
-## Tech Stack
-
-| Layer | Technology |
-|---|---|
-| **AI Platform** | Azure AI Foundry Agent Service |
-| **Model** | gpt-5.4-mini (`azureml://registries/azure-openai/models/gpt-5.4-mini/versions/2026-03-17`) |
-| **Backend** | Python 3.11+ · FastAPI · uvicorn |
-| **Frontend** | Next.js 15 · React 19 · TypeScript · Tailwind CSS |
-| **IaC** | Bicep (primary) · Terraform (secondary) |
-| **MCP Servers** | Bicep MCP · Terraform MCP · Azure MCP |
-| **Source Control** | GitHub REST API |
-| **Auth** | `DefaultAzureCredential` (azure-identity) |
-| **Deps** | uv · npm |
 
 ---
 
