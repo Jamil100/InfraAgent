@@ -8,6 +8,9 @@ dependencies = [
     "azure-ai-projects>=2.0.0",
     "azure-identity>=1.19.0",
     "agent-framework",
+    # Azure Management (subscription discovery)
+    "azure-mgmt-resource>=23.0.0",
+    "azure-mgmt-network>=25.0.0",
     # API
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.34.0",

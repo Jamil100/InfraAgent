@@ -5,6 +5,7 @@
 | Tool | Version | Purpose |
 |---|---|---|
 | **Python** | 3.11+ | Backend runtime |
+| **Node.js** | 20+ | Frontend runtime |
 | **uv** | latest | Package manager (replaces pip/venv) |
 | **Azure CLI** | latest | Authentication + subscription access |
 | **Docker Desktop** | latest | Terraform MCP Server |
@@ -76,6 +77,15 @@ GITHUB_TOKEN=ghp_<your-token>
 GITHUB_REPO_OWNER=<org-or-user>
 GITHUB_REPO_NAME=terrabot
 GITHUB_TARGET_BRANCH=main
+
+# MCP Servers — leave blank to skip; set when running MCP servers locally
+# MCP_BICEP_URL=http://localhost:5007/mcp
+# MCP_TERRAFORM_URL=http://localhost:5008/mcp
+# MCP_AZURE_URL=http://localhost:5009/mcp
+
+# Deployment — leave blank to stop pipeline at PR; set to enable the deploy stage
+# DEPLOY_RESOURCE_GROUP=rg-infraagent-dev
+# DEPLOY_LOCATION=eastus
 ```
 
 ### 4. Authenticate with Azure
@@ -95,6 +105,22 @@ uv run uvicorn main:app --reload --port 8000
 ```
 
 Verify: `http://localhost:8000/health` should return `{"status": "ok", "version": "0.1.0"}`.
+
+### 6. Set Up and Run the Frontend
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Verify: `http://localhost:3000` should open the InfraAgent chat interface.
+
+The frontend expects the backend to be running at `http://localhost:8000`. To override, set `NEXT_PUBLIC_API_URL` in `frontend/.env.local`:
+
+```env
+NEXT_PUBLIC_API_URL=http://localhost:8000
+```
 
 ## MCP Server Setup
 

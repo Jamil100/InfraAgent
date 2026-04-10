@@ -19,6 +19,15 @@ class Settings:
     github_repo_name: str = os.getenv("GITHUB_REPO_NAME", "")
     github_target_branch: str = os.getenv("GITHUB_TARGET_BRANCH", "main")
 
+    # MCP Servers (optional — leave blank to skip tool grounding)
+    mcp_bicep_url: str = os.getenv("MCP_BICEP_URL", "")
+    mcp_terraform_url: str = os.getenv("MCP_TERRAFORM_URL", "")
+    mcp_azure_url: str = os.getenv("MCP_AZURE_URL", "")
+
+    # Deploy
+    deploy_resource_group: str = os.getenv("DEPLOY_RESOURCE_GROUP", "")
+    deploy_location: str = os.getenv("DEPLOY_LOCATION", "westeurope")
+
     # App
     log_level: str = os.getenv("LOG_LEVEL", "INFO")
     cors_origins: list[str] = os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")

@@ -41,6 +41,7 @@ Each pipeline run tracks its progress through `PipelineState.stage`:
 |---|---|
 | `consulting` | Gathering requirements via conversational chat |
 | `codegen` | Generating Bicep/Terraform from `RequirementsHandoff` |
+| `validating` | Deterministic CLI lint/fmt/validate (`az bicep lint`, `terraform validate`) |
 | `standards` | Checking naming, tagging, and structural policies |
 | `security` | Scanning for vulnerabilities (public exposure, encryption, secrets) |
 | `human_review_code` | **H1** — human approves generated code before PR |
@@ -79,9 +80,9 @@ block-beta
 | `IStandardsPort` | `StandardsAgent` | Checks naming/tagging/structure policies |
 | `ISecurityPort` | `SecurityAgent` | Static security analysis |
 | `ISourceControlPort` | `GitHubAdapter` | Branch, commit, PR management |
-| `IDeployPort` | *(not yet implemented)* | Plan/apply operations |
-| `IValidationPort` | *(not yet implemented)* | Deterministic IaC validation (fmt/build/lint) |
-| `ISubscriptionDiscoveryPort` | *(not yet implemented)* | Azure subscription resource discovery |
+| `IDeployPort` | `BicepDeployAdapter` / `TerraformDeployAdapter` | `what-if`/`plan` and `deploy`/`apply` operations |
+| `IValidationPort` | `IaCValidationAdapter` | Deterministic IaC validation (`az bicep lint`, `terraform fmt`/`validate`) |
+| `ISubscriptionDiscoveryPort` | `AzureSubscriptionDiscoveryAdapter` | Azure subscription resource and naming-pattern discovery |
 
 ## Agent Architecture
 
@@ -111,16 +112,16 @@ Configuration is at the Foundry project level — code references `MODEL_DEPLOYM
 
 **Loop 1 (Code Quality)**: CodeGen → Standards + Security → check for errors → retry with feedback (max 3 iterations). Only `Severity.ERROR` findings trigger a retry; warnings and info are passed through.
 
-**Loop 2 (Plan Verification)** *(future)*: Plan → analyze errors → CodeGen rework → re-validate → re-plan (max 2 iterations).
+**Loop 2 (Plan Verification)**: Plan → on failure, feed the error back to CodeGen for rework → re-commit to branch → re-plan (max 2 iterations).
 
 ## Human Gates
 
-| Gate | When | MVP Behavior |
+| Gate | When | API Endpoint |
 |---|---|---|
-| **H1** | After review loop passes, before PR creation | Auto-approved (logged) |
-| **H2** | After plan succeeds, before deployment | Auto-approved (logged) |
+| **H1** | After review loop passes, before PR creation | `POST /api/pipeline/approve/h1` |
+| **H2** | After plan succeeds, before deployment | `POST /api/pipeline/approve/h2` |
 
-In production, these would pause the pipeline and wait for explicit approval via the API or UI.
+The pipeline pauses at each gate and polls an in-memory flag. The frontend surfaces an approval UI that calls the corresponding endpoint. Both gates accept an optional `comment` field.
 
 ## Technology Stack
 
@@ -129,11 +130,13 @@ In production, these would pause the pipeline and wait for explicit approval via
 | **AI Platform** | Azure AI Foundry Agent Service |
 | **Agent Framework** | Microsoft Agent Framework (`agent-framework` Python package) |
 | **Backend** | Python 3.11+ · FastAPI · uvicorn |
-| **Dependencies** | uv (pyproject.toml) |
+| **Frontend** | Next.js 15 (App Router) · React 19 · TypeScript · Tailwind CSS |
+| **Dependencies** | uv (pyproject.toml) · npm (frontend) |
 | **IaC** | Bicep (primary) · Terraform (secondary) |
 | **Source Control** | GitHub REST API v3 |
 | **Authentication** | Azure Identity (`DefaultAzureCredential`) |
-| **MCP Servers** | Bicep MCP · Terraform MCP · Azure MCP |
+| **Azure SDKs** | `azure-mgmt-resource` · `azure-mgmt-network` (subscription discovery) |
+| **MCP Servers** | Bicep MCP · Terraform MCP · Azure MCP (auto-wired per agent via env vars) |
 
 ## Key Domain Models
 

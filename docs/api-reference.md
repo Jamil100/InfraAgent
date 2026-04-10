@@ -69,7 +69,7 @@ Send a message to the Consulting Agent. The agent gathers infrastructure require
 
 ### `POST /api/pipeline/start`
 
-Executes the full pipeline: CodeGen → Standards + Security review loop → PR creation.
+Starts the pipeline as a **background task** and returns immediately. The pipeline runs asynchronously; poll `/api/pipeline/status/{session_id}` to track progress.
 
 **Prerequisite**: Complete a `/api/chat` session until `requirements_ready: true`.
 
@@ -88,22 +88,16 @@ Executes the full pipeline: CodeGen → Standards + Security review loop → PR 
 ```json
 {
   "session_id": "a1b2c3d4-...",
-  "stage": "pr_created",
-  "pr_url": "https://github.com/org/repo/pull/42",
-  "files_generated": 4,
-  "findings": 2,
-  "error": ""
+  "status": "started",
+  "message": "Pipeline started in background. Poll /api/pipeline/status/{session_id} for progress."
 }
 ```
 
 | Field | Type | Description |
 |---|---|---|
-| `session_id` | string | Session ID |
-| `stage` | string | Final pipeline stage (see Pipeline Stages below) |
-| `pr_url` | string | GitHub PR URL (empty if failed before PR) |
-| `files_generated` | integer | Number of IaC files generated |
-| `findings` | integer | Total validation findings (errors + warnings + info) |
-| `error` | string | Error message if `stage` is `"failed"` |
+| `session_id` | string | Session ID to use when polling status |
+| `status` | string | Always `"started"` |
+| `message` | string | Human-readable description |
 
 **Error Responses**:
 
@@ -111,7 +105,7 @@ Executes the full pipeline: CodeGen → Standards + Security review loop → PR 
 |---|---|
 | `404` | Session ID not found — call `/api/chat` first |
 | `400` | No requirements yet — complete the consulting chat |
-| `500` | Pipeline produced no output |
+| `409` | Pipeline already running for this session |
 
 ---
 
@@ -119,14 +113,101 @@ Executes the full pipeline: CodeGen → Standards + Security review loop → PR 
 
 ### `GET /api/pipeline/status/{session_id}`
 
-Check the current state of a session.
+Check the current state of a pipeline run. Poll this endpoint after calling `POST /api/pipeline/start`.
 
 **Response** `200 OK`:
 ```json
 {
   "session_id": "a1b2c3d4-...",
-  "has_requirements": true
+  "has_requirements": true,
+  "pipeline_running": true,
+  "h1_approved": null,
+  "h2_approved": null,
+  "pipeline_state": {
+    "stage": "standards",
+    "iteration": 2,
+    "pr_url": "",
+    "files": [...],
+    "findings": [...],
+    "plan_output": null,
+    "error": ""
+  }
 }
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `session_id` | string | Session ID |
+| `has_requirements` | boolean | Whether a `RequirementsHandoff` exists for this session |
+| `pipeline_running` | boolean | `true` while the background task is still executing |
+| `h1_approved` | boolean \| null | `null` = gate not yet reached; `true`/`false` = decision |
+| `h2_approved` | boolean \| null | `null` = gate not yet reached; `true`/`false` = decision |
+| `pipeline_state` | object \| null | Full `PipelineState` snapshot (see Data Models) |
+
+**Error Responses**:
+
+| Status | When |
+|---|---|
+| `404` | Session not found |
+
+---
+
+## Human Gate Approvals
+
+### `POST /api/pipeline/approve/h1`
+
+Approve or reject the **H1 code review gate** (approve generated code before PR creation).
+
+**Request Body**:
+```json
+{
+  "session_id": "a1b2c3d4-...",
+  "approved": true,
+  "comment": "LGTM — naming conventions are correct"
+}
+```
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `session_id` | string | *(required)* | Session ID |
+| `approved` | boolean | *(required)* | `true` to approve and proceed to PR; `false` to reject |
+| `comment` | string | `""` | Optional reviewer comment logged with the pipeline state |
+
+**Response** `200 OK`:
+```json
+{ "ok": true }
+```
+
+**Error Responses**:
+
+| Status | When |
+|---|---|
+| `404` | Session not found |
+
+---
+
+### `POST /api/pipeline/approve/h2`
+
+Approve or reject the **H2 plan review gate** (approve the `what-if`/`terraform plan` output before deployment).
+
+**Request Body**:
+```json
+{
+  "session_id": "a1b2c3d4-...",
+  "approved": true,
+  "comment": "Plan looks correct — no unexpected deletions"
+}
+```
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `session_id` | string | *(required)* | Session ID |
+| `approved` | boolean | *(required)* | `true` to proceed to deployment; `false` to fail the pipeline |
+| `comment` | string | `""` | Optional reviewer comment |
+
+**Response** `200 OK`:
+```json
+{ "ok": true }
 ```
 
 **Error Responses**:
@@ -145,6 +226,7 @@ The `stage` field in pipeline responses uses these values:
 |---|---|
 | `consulting` | Gathering requirements |
 | `codegen` | Generating IaC code |
+| `validating` | Deterministic CLI validation (`az bicep lint` / `terraform fmt` + `validate`) |
 | `standards` | Running standards checks |
 | `security` | Running security scan |
 | `human_review_code` | Awaiting H1 code review approval |

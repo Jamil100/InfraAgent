@@ -152,7 +152,37 @@ Use the AI Toolkit to iterate on prompts before deploying:
 2. **Agent Inspector**: Connect to a running agent's thread, inspect conversation history and JSON output
 3. **Local testing**: Run the backend locally, use `/api/chat` to test Consulting agent, `/api/pipeline/start` to test the full pipeline
 
-## Design Principles
+## MCP Tool Auto-Wiring
+
+Foundry agents can be equipped with **MCP (Model Context Protocol) tool servers** that give them real-time access to Azure resources, Bicep documentation, and Terraform provider schemas. Tool attachment is automatic — no code changes needed.
+
+### How it Works
+
+`backend/src/agents/factory.py` defines a mapping (`_AGENT_MCP_SERVERS`) specifying which MCP servers each agent should receive:
+
+| Agent | MCP Servers |
+|---|---|
+| `codegen` | Bicep MCP, Terraform MCP, Azure MCP |
+| `standards` | Bicep MCP, Azure MCP |
+| `security` | Bicep MCP, Terraform MCP |
+| `consulting` | Azure MCP |
+
+When `create_agent()` is called, `_build_mcp_tools(agent_name)` reads the corresponding env vars. For each configured URL, it creates an `McpTool` and attaches it to the agent. If an env var is empty or `McpTool` is not available in the installed SDK version, the agent is created without that tool (graceful degradation — a warning is logged).
+
+### Configuration
+
+Set these env vars to enable MCP tools (leave blank to disable):
+
+```env
+MCP_BICEP_URL=http://localhost:5007/mcp
+MCP_TERRAFORM_URL=http://localhost:5008/mcp
+MCP_AZURE_URL=http://localhost:5009/mcp
+```
+
+See [setup.md](setup.md) and [mcp-servers.md](mcp-servers.md) for instructions on starting each MCP server.
+
+---
+
 
 1. **Structured JSON contracts** — Agents return JSON in markdown fences, parsed into Pydantic models. This makes agent output deterministic and testable.
 

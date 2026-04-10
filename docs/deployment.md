@@ -13,12 +13,19 @@ graph LR
 ## Local Development
 
 ```bash
+# Terminal 1 — Backend
 cd backend
 uv sync
 uv run uvicorn main:app --reload --port 8000
+
+# Terminal 2 — Frontend
+cd frontend
+npm install
+npm run dev
 ```
 
-Uses `DefaultAzureCredential` — authenticate via `az login`.
+- Backend: `http://localhost:8000` (uses `DefaultAzureCredential` — authenticate via `az login`)
+- Frontend: `http://localhost:3000`
 
 ## Docker Containerization
 

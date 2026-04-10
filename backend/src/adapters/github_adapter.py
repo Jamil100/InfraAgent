@@ -59,14 +59,29 @@ class GitHubAdapter(ISourceControlPort):
         async with httpx.AsyncClient() as client:
             for f in files:
                 content_b64 = b64encode(f.content.encode()).decode()
+
+                # Check if file already exists on this branch (needed for update)
+                existing_sha: str | None = None
+                get_resp = await client.get(
+                    f"{self._repo_url}/contents/{f.path}",
+                    headers=self._headers,
+                    params={"ref": branch_name},
+                )
+                if get_resp.status_code == 200:
+                    existing_sha = get_resp.json().get("sha")
+
+                put_body: dict = {
+                    "message": message,
+                    "content": content_b64,
+                    "branch": branch_name,
+                }
+                if existing_sha:
+                    put_body["sha"] = existing_sha
+
                 resp = await client.put(
                     f"{self._repo_url}/contents/{f.path}",
                     headers=self._headers,
-                    json={
-                        "message": message,
-                        "content": content_b64,
-                        "branch": branch_name,
-                    },
+                    json=put_body,
                 )
                 resp.raise_for_status()
             logger.info("Committed %d files to %s", len(files), branch_name)
