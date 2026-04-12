@@ -7,6 +7,35 @@
 
 ## Completed Work
 
+### Issue #4: Define All Port Interfaces (Application Layer Contracts) ✅
+**Status:** COMPLETE
+**Approach:** Implemented all 12 ports and 16 dataclasses per TechSpec 2.1, using dual-support pattern
+
+**Key Accomplishments:**
+- Rewrote `src/application/ports/ports.py` (~500 lines) with complete TechSpec 2.1 compliance
+- **7 new ports from TechSpec:**
+  1. `ILLMCompletionPort` - LLM provider abstraction with ModelRouter task profiles
+  2. `IInfraProviderPort` - Unified Terraform+Bicep interface (replaces split design)
+  3. `ISourceControlPort` - Extended with workflow trigger & pipeline status methods
+  4. `IPolicyEnginePort` - Policy validation (naming, tags, security)
+  5. `ITemplateRegistryPort` - Knowledge wiki abstraction
+  6. `IObservabilityPort` - OpenTelemetry wrapper
+  7. `ISubscriptionDiscoveryPort` - Extended with SKU/quota checks
+- **5 legacy ports retained:** `ICodeGenPort`, `IValidationPort`, `IStandardsPort`, `ISecurityPort`, `IDeployPort`
+- **16 dataclasses:** All with proper field defaults using stdlib `@dataclass` decorator
+- Updated `src/application/ports/__init__.py` with all 28 public exports
+
+**Architectural Decision (Dual-Support Pattern):**
+- **Ports layer:** Uses dataclasses (canonical contracts, per TechSpec)
+- **Domain/Infrastructure layers:** Continue using Pydantic models
+- **Boundary conversion:** Deferred to adapter issues; zero breaking changes to existing code
+
+**Verification:**
+- All 12 ports abstract ✓ (raise TypeError on instantiation)
+- All 16 dataclasses instantiate correctly ✓
+- All 28 symbols exported via `__init__.py` ✓
+- TechSpec 2.1 full compliance verified ✓
+
 ### Issue #1: Initialize Monorepo with Clean Architecture ✅
 **Status:** COMPLETE
 **Approach:** Consolidated `backend/src/` → `src/` at root level for true monorepo structure
@@ -71,11 +100,11 @@ All imports updated to new clean architecture paths:
 - **Technical Spec:** InfraAgent/docs/ (v2.0)
 
 ## Next Issues to Implement
-1. **Issue #2-#4:** Domain layer (models, policies, ports)
-2. **Issue #5-#6:** Infrastructure adapters (IaC parser, Bicep)
-3. **Issue #7:** CI/CD pipelines
-4. **Issue #8-#9:** Knowledge wiki setup and templates
-5. **Issue #10:** Database schema and migrations
+1. **Issue #2-#3:** Domain layer (models, policies)
+2. **Issue #5:** IaC parser for HCL/Bicep resource extraction
+3. **Issue #6:** Bicep self-deployment infrastructure
+4. **Issue #7:** CI/CD pipelines
+5. **Issue #8-#9:** Knowledge wiki setup and templates
 
 ## User Preferences
 - Command style: Direct, concise, action-oriented
