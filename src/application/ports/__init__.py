@@ -2,62 +2,49 @@
 
 from __future__ import annotations
 
-# LLM Completion
-from src.application.ports.ports import (
+from src.application.ports.infra_provider_port import (
+    ApplyResult,
+    IInfraProviderPort,
+    PlanResult,
+    ValidationResult,
+)
+from src.application.ports.llm_port import (
     ILLMCompletionPort,
     LLMMessage,
     LLMResponse,
     TaskProfile,
     ToolDefinition,
 )
-
-# Infra Provider
-from src.application.ports.ports import (
-    ApplyResult,
-    IInfraProviderPort,
-    PlanResult,
-    ValidationResult,
-)
-
-# Source Control
-from src.application.ports.ports import (
-    ISourceControlPort,
-    PRResult,
-    PipelineStatus,
-)
-
-# Policy Engine
-from src.application.ports.ports import (
+from src.application.ports.observability_port import IObservabilityPort
+from src.application.ports.policy_engine_port import (
     IPolicyEnginePort,
     PolicyResult,
     PolicyViolation,
 )
-
-# Template Registry
-from src.application.ports.ports import (
-    HydratedTemplate,
-    ITemplateRegistryPort,
-    TemplateMetadata,
+from src.application.ports.source_control_port import (
+    ISourceControlPort,
+    PipelineStatus,
+    PRResult,
 )
-
-# Observability
-from src.application.ports.ports import IObservabilityPort
-
-# Subscription Discovery
-from src.application.ports.ports import (
+from src.application.ports.subscription_discovery_port import (
     DiscoveredResource,
     DiscoveredVNet,
     ISubscriptionDiscoveryPort,
     SubscriptionContext,
 )
+from src.application.ports.template_registry_port import (
+    HydratedTemplate,
+    ITemplateRegistryPort,
+    TemplateMetadata,
+)
 
-# Legacy/Application (for backward compatibility)
+# Legacy ports (backward compat — new code should prefer the canonical ports above)
 from src.application.ports.ports import (
     ICodeGenPort,
+    IDeployPort,
     ISecurityPort,
     IStandardsPort,
     IValidationPort,
-    IDeployPort,
 )
 
 __all__ = [
@@ -91,7 +78,7 @@ __all__ = [
     "DiscoveredResource",
     "DiscoveredVNet",
     "SubscriptionContext",
-    # Legacy/Application
+    # Legacy
     "ICodeGenPort",
     "IValidationPort",
     "IStandardsPort",
