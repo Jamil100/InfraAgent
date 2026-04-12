@@ -1612,6 +1612,8 @@ If Foundry Agent Service workflow API has limitations hit during build (PRD Risk
 
 ## Summary: Issue Dependency & Parallelization Map
 
+**The below are REF numbers**
+
 ### Week 1 (Foundation) — 21 issues, high parallelism
 
 | Day | E1 (Agent Backend) | E2 (CodeGen+Validation) | E3 (Frontend) | E4 (GitHub+Deploy) | E5 (Wiki+Infra) |
