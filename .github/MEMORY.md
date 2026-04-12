@@ -56,22 +56,22 @@
 - External: Terraform CLI must be installed on system (not in Python requirements)
 
 ### Issue #4: Define All Port Interfaces (Application Layer Contracts) ✅
-**Status:** COMPLETE
+**Status:** COMPLETE (revised 2026-04-12 — port file split + AVM method added)
 **Approach:** Implemented all 12 ports and 16 dataclasses per TechSpec 2.1, using dual-support pattern
 
 **Key Accomplishments:**
-- Rewrote `src/application/ports/ports.py` (~500 lines) with complete TechSpec 2.1 compliance
-- **7 new ports from TechSpec:**
-  1. `ILLMCompletionPort` - LLM provider abstraction with ModelRouter task profiles
-  2. `IInfraProviderPort` - Unified Terraform+Bicep interface (replaces split design)
-  3. `ISourceControlPort` - Extended with workflow trigger & pipeline status methods
-  4. `IPolicyEnginePort` - Policy validation (naming, tags, security)
-  5. `ITemplateRegistryPort` - Knowledge wiki abstraction
-  6. `IObservabilityPort` - OpenTelemetry wrapper
-  7. `ISubscriptionDiscoveryPort` - Extended with SKU/quota checks
-- **5 legacy ports retained:** `ICodeGenPort`, `IValidationPort`, `IStandardsPort`, `ISecurityPort`, `IDeployPort`
-- **16 dataclasses:** All with proper field defaults using stdlib `@dataclass` decorator
-- Updated `src/application/ports/__init__.py` with all 28 public exports
+- **7 new ports from TechSpec, each in its own file (ADR-007):**
+  1. `src/application/ports/llm_port.py` — `ILLMCompletionPort` with ModelRouter task profiles
+  2. `src/application/ports/infra_provider_port.py` — `IInfraProviderPort` (unified Terraform+Bicep)
+  3. `src/application/ports/source_control_port.py` — `ISourceControlPort` with pipeline trigger
+  4. `src/application/ports/policy_engine_port.py` — `IPolicyEnginePort` (naming, tags, security, AVM)
+  5. `src/application/ports/template_registry_port.py` — `ITemplateRegistryPort`
+  6. `src/application/ports/observability_port.py` — `IObservabilityPort`
+  7. `src/application/ports/subscription_discovery_port.py` — `ISubscriptionDiscoveryPort`
+- **5 legacy ports retained in `ports.py`:** `ICodeGenPort`, `IValidationPort`, `IStandardsPort`, `ISecurityPort`, `IDeployPort`
+- **Added `check_avm_availability()` to `IPolicyEnginePort`** — required by Standards Agent (#27) and Validation Pipeline (#24)
+- `ports.py` is now a backward-compat re-export shim (all existing imports unchanged)
+- `__init__.py` imports from individual files; re-exports all 28+ public symbols
 
 **Architectural Decision (Dual-Support Pattern):**
 - **Ports layer:** Uses dataclasses (canonical contracts, per TechSpec)
@@ -81,8 +81,21 @@
 **Verification:**
 - All 12 ports abstract ✓ (raise TypeError on instantiation)
 - All 16 dataclasses instantiate correctly ✓
-- All 28 symbols exported via `__init__.py` ✓
+- All symbols exported via `__init__.py` ✓
+- `check_avm_availability()` present on `IPolicyEnginePort` ✓
 - TechSpec 2.1 full compliance verified ✓
+
+**Files:**
+- `src/application/ports/llm_port.py` — new
+- `src/application/ports/infra_provider_port.py` — new
+- `src/application/ports/source_control_port.py` — new
+- `src/application/ports/policy_engine_port.py` — new (includes check_avm_availability)
+- `src/application/ports/template_registry_port.py` — new
+- `src/application/ports/observability_port.py` — new
+- `src/application/ports/subscription_discovery_port.py` — new
+- `src/application/ports/ports.py` — rewritten as re-export shim
+- `src/application/ports/__init__.py` — updated to import from individual files
+- `docs/decisions/ADR-007-port-file-split.md` — architectural decision record
 
 ### Issue #1: Initialize Monorepo with Clean Architecture ✅
 **Status:** COMPLETE
