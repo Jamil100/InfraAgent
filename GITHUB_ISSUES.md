@@ -1639,13 +1639,96 @@ If Foundry Agent Service workflow API has limitations hit during build (PRD Risk
 
 ```
 #1 → #4 → #11 → #18 → #23 → #25 → #32 → #43 → #46
-           ↓
-      #13/#14 → #19 → #24 → #27/#28 → #43
-           ↓
-      #12 → #20 → #29/#31 → #44/#45
-           ↓
-      #8 → #9 → #15 → #33 → #38/#44
+     ↓
+     #13/#14 → #19 → #24 → #27/#28 → #43
+     ↓
+     #12 → #20 → #29/#31 → #44/#45
+     ↓
+     #8 → #9 → #15 → #33 → #38/#44
 ```
+  ---                                                                                                          
+  Critical Path Explanation                                                                                    
+                                                                                                               
+  The critical path is a dependency graph showing the minimum sequence of work that gates everything else.     
+  Delays on this path delay the whole project.                                                                 
+                  
+  #1 → #4 → #11 → #18 → #23 → #25 → #32 → #43 → #46
+       ↓
+       #13/#14 → #19 → #24 → #27/#28 → #43
+       ↓
+       #12 → #20 → #29/#31 → #44/#45
+       ↓
+       #8 → #9 → #15 → #33 → #38/#44
+
+  ---
+  The Trunk (single-threaded blocker chain)
+
+  ┌───────┬──────────────────────────┬─────────────────────────────────────────────────────────────────────┐
+  │ Issue │          Title           │                            Why it blocks                            │
+  ├───────┼──────────────────────────┼─────────────────────────────────────────────────────────────────────┤
+  │ #1    │ Initialize monorepo      │ Foundation for everything — nothing can start without the project   │
+  │       │                          │ structure                                                           │
+  ├───────┼──────────────────────────┼─────────────────────────────────────────────────────────────────────┤
+  │ #4    │ Define all port          │ All adapters and use cases depend on these contracts                │
+  │       │ interfaces               │                                                                     │
+  └───────┴──────────────────────────┴─────────────────────────────────────────────────────────────────────┘
+
+  #1 → #4 must be done sequentially before any of the 4 parallel tracks can begin.
+
+  ---
+  4 Parallel Tracks (all fan out from #4)
+
+  Once #4 is done, 4 tracks can run in parallel, each converging on the demo issues:
+
+  Track 1 — Chat / Orchestration path (E1)
+  #4 → #11 (LLM/ModelRouter adapter)
+     → #18 (ConsultUseCase)
+     → #23 (Register agents in Azure AI Foundry)
+     → #25 (Orchestrator chat workflow)
+     → #32 (Chat API + WebSocket)
+     → #43 (E2E Demo 1: Chat path)
+     → #46 (Demo rehearsal + hardening)
+  This is the spine of Demo 1 — the conversational IaC generation flow.
+
+  Track 2 — IaC Generation & Validation (E2)
+  #4 → #13/#14 (Terraform + Bicep CLI adapters)
+     → #19 (GenerateUseCase)
+     → #24 (IaC Validation Pipeline)
+     → #27/#28 (Standards Agent + Security Agent)
+     → #43
+  Delivers the code generation + policy enforcement pipeline that feeds Demo 1.
+
+  Track 3 — Deployment & GitHub (E4)
+  #4 → #12 (GitHub adapter)
+     → #20 (DeployUseCase)
+     → #29/#31 (PR Workflow Agent + Deploy Agent)
+     → #44/#45 (Demo 2: Catalog path + Demo 3: Plan failure/rework)
+  Delivers the full plan/apply/rework loop and PR automation for Demos 2 & 3.
+
+  Track 4 — Knowledge Wiki & Catalog (E5)
+  #4 → #8 (Knowledge wiki repo + submodule)
+     → #9 (3 starter templates)
+     → #15 (Template Registry adapter)
+     → #33 (Catalog API endpoints)
+     → #38 (Self-Service Catalog UI)
+     → #44
+  Delivers the template catalog browsing experience for Demo 2.
+
+  ---
+  Convergence Points
+
+  ┌───────┬──────────────────────────────────────────────────────────────────────────┐
+  │ Issue │                                   Role                                   │
+  ├───────┼──────────────────────────────────────────────────────────────────────────┤
+  │ #43   │ Tracks 1 & 2 must both be complete before E2E Demo 1 can pass            │
+  ├───────┼──────────────────────────────────────────────────────────────────────────┤
+  │ #44   │ Tracks 3 & 4 must both be complete before Demo 2 (Catalog path) can pass │
+  ├───────┼──────────────────────────────────────────────────────────────────────────┤
+  │ #46   │ Final gate — demo rehearsal only starts when #43 is green                │
+  └───────┴──────────────────────────────────────────────────────────────────────────┘
+
+  The riskiest point is #4 → #11/#13/#14 simultaneously, since any slip in the port interfaces (or in the
+  LLM/Terraform/Bicep adapters) cascades into all 4 tracks.
 
 The critical path runs through: repo setup → port interfaces → LLM adapter → ConsultUseCase → agent registration → orchestrator workflows → chat API → E2E integration → demo rehearsal.
 
