@@ -7,6 +7,54 @@
 
 ## Completed Work
 
+### Issue #13: Implement Terraform CLI Adapter (IInfraProviderPort) ✅
+**Status:** COMPLETE
+**Approach:** Full async adapter implementing IInfraProviderPort with plan/apply coupling using UUID-based temp directories
+
+**Key Accomplishments:**
+- Created `src/infrastructure/adapters/terraform_adapter.py` (549 lines) with TerraformInfraProviderAdapter class
+- Implemented all 6 methods per IInfraProviderPort interface:
+  1. `format_check(files)` - runs `terraform fmt -check` → ValidationResult
+  2. `validate(files)` - runs `terraform init -backend=false` + `terraform validate -json` → ValidationResult
+  3. `lint(files)` - runs `tflint` (optional, graceful if missing) → ValidationResult
+  4. `plan(files, variables)` - runs `terraform plan -json -out=tfplan` → PlanResult with resource counts
+  5. `apply(plan_id)` - runs `terraform apply` using stored plan → ApplyResult
+  6. `get_language()` - returns "terraform" (non-async)
+- 5 helper methods for CLI execution and output parsing:
+  - `_write_files()` - atomic file placement to temp directories
+  - `_write_tfvars()` - JSON variable encoding with jsonDecode()
+  - `_parse_tf_plan_json()` - counts create/update/delete actions from JSON output
+  - `_parse_tf_validate_json()` - extracts diagnostics with severity levels
+  - `_parse_tflint_output()` - parses lint warnings/errors from text output
+- UUID-based temp directory storage for plan→apply coupling (stateless, resilient cleanup)
+- JSON-based terraform.tfvars generation (no dependencies, type-safe)
+- Comprehensive error handling: FileNotFoundError, JSON parsing errors, graceful CLI fallback
+- Exit code logic per Terraform spec: fmt(0/3), validate(0), plan(0/2), apply(0)
+
+**Testing & Verification:**
+- 40+ unit test cases using mocked subprocess execution
+- Coverage: success paths, error paths, CLI not installed, malformed JSON
+- Manual verification of all core functionality passed ✓
+- All dataclass integration tests verified
+- Test file: `tests/unit/infrastructure/adapters/test_terraform_adapter.py` (457 lines)
+
+**Architectural Decisions (ADR-006):**
+- Plan storage: UUID-temp dirs (MVP-appropriate, can upgrade to persistent storage later)
+- tflint: Optional (graceful warning if not installed per stretch goal)
+- Variables: JSON-based with jsonDecode() (simple, no extra dependencies)
+- Types: Dataclass ports vs Pydantic domain (clean architecture per ADR-003)
+
+**Files Changed:**
+- `src/infrastructure/adapters/terraform_adapter.py` - New adapter (549 lines)
+- `src/infrastructure/adapters/__init__.py` - Export adapter
+- `tests/unit/infrastructure/adapters/test_terraform_adapter.py` - Unit tests (457 lines)
+- `docs/decisions/ADR-006-unified-iac-provider-with-terraform.md` - Architectural decision record
+
+**Dependencies:**
+- Depends on: Issue #4 ✅ (IInfraProviderPort interface + dataclasses)
+- Blocks: Issue #15, Issue #24, Issue #32
+- External: Terraform CLI must be installed on system (not in Python requirements)
+
 ### Issue #4: Define All Port Interfaces (Application Layer Contracts) ✅
 **Status:** COMPLETE
 **Approach:** Implemented all 12 ports and 16 dataclasses per TechSpec 2.1, using dual-support pattern
@@ -102,9 +150,10 @@ All imports updated to new clean architecture paths:
 ## Next Issues to Implement
 1. **Issue #2-#3:** Domain layer (models, policies)
 2. **Issue #5:** IaC parser for HCL/Bicep resource extraction
-3. **Issue #6:** Bicep self-deployment infrastructure
-4. **Issue #7:** CI/CD pipelines
-5. **Issue #8-#9:** Knowledge wiki setup and templates
+3. **Issue #14:** Bicep CLI adapter (blocked by #4, parallel to #13) → unblocked now
+4. **Issue #15:** Bicep self-deployment infrastructure (blocks #24)
+5. **Issue #6:** Bicep modules as AVM references
+6. **Issue #7:** CI/CD pipelines
 
 ## User Preferences
 - Command style: Direct, concise, action-oriented
