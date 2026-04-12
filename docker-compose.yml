@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  backend:
+    build: .
+    container_name: infraagent-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - LOG_LEVEL=INFO
+      - PYTHONUNBUFFERED=1
+    env_file:
+      - .env.local
+    volumes:
+      - ./src:/app/src
+      - ./docs:/app/docs
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
+    networks:
+      - infraagent
+
+networks:
+  infraagent:
+    driver: bridge
