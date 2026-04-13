@@ -7,6 +7,7 @@ dependencies = [
     # Azure AI Foundry + Agent Framework
     "azure-ai-projects>=2.0.0",
     "azure-identity>=1.19.0",
+    "openai>=1.0.0",
     "agent-framework",
     # Azure Management (subscription discovery)
     "azure-mgmt-resource>=23.0.0",

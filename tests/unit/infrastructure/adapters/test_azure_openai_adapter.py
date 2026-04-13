@@ -31,10 +31,18 @@ def _fake_response(
     )
 
 
-def _adapter_with_create(create_mock: mock.AsyncMock) -> AzureOpenAIAdapter:
+def _adapter_with_create(
+    create_mock: mock.AsyncMock,
+    *,
+    max_tool_iterations: int = 8,
+) -> AzureOpenAIAdapter:
     openai_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create_mock)))
     project_client = SimpleNamespace(get_openai_client=mock.Mock(return_value=openai_client))
-    return AzureOpenAIAdapter(project_client=project_client, base_backoff_seconds=0.001)
+    return AzureOpenAIAdapter(
+        project_client=project_client,
+        base_backoff_seconds=0.001,
+        max_tool_iterations=max_tool_iterations,
+    )
 
 
 @pytest.mark.asyncio
@@ -125,6 +133,31 @@ async def test_complete_with_tools_executes_tool_loop() -> None:
     tool_executor.assert_awaited_once_with("lookup", {"id": "42"})
     second_call_messages = create_mock.await_args_list[1].kwargs["messages"]
     assert any(msg.get("role") == "tool" and msg.get("tool_call_id") == "call-1" for msg in second_call_messages)
+
+
+@pytest.mark.asyncio
+async def test_complete_with_tools_raises_when_max_iterations_exceeded() -> None:
+    tool_response = _fake_response(
+        tool_calls=[
+            SimpleNamespace(
+                id="call-1",
+                type="function",
+                function=SimpleNamespace(name="lookup", arguments='{"id":"42"}'),
+            )
+        ]
+    )
+    create_mock = mock.AsyncMock(side_effect=[tool_response, tool_response])
+    adapter = _adapter_with_create(create_mock, max_tool_iterations=2)
+    tool_executor = mock.AsyncMock(return_value={"value": "result"})
+
+    with pytest.raises(RuntimeError, match="Tool-calling loop exceeded max_tool_iterations"):
+        await adapter.complete_with_tools(
+            "system",
+            [LLMMessage(role="user", content="fetch it")],
+            tools=[ToolDefinition(name="lookup", description="Lookup data", input_schema={"type": "object"})],
+            tool_executor=tool_executor,
+            task_profile=TaskProfile(profile="code-generation"),
+        )
 
 
 def test_extract_content_supports_multiple_shapes() -> None:

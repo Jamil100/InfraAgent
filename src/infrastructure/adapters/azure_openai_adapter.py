@@ -132,7 +132,15 @@ class AzureOpenAIAdapter(ILLMCompletionPort):
                     }
                 )
 
-        return latest_response or LLMResponse(content="")
+        logger.error(
+            "Tool-calling loop exceeded max iterations without reaching a final response "
+            "(max_tool_iterations=%s).",
+            self._max_tool_iterations,
+        )
+        raise RuntimeError(
+            f"Tool-calling loop exceeded max_tool_iterations={self._max_tool_iterations} "
+            "without producing a final response."
+        )
 
     async def _complete_raw(
         self,
