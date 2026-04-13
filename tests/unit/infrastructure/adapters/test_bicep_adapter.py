@@ -134,6 +134,18 @@ class TestLint:
             assert result.valid is False
             assert any("from stdout" in err for err in result.errors)
 
+    @pytest.mark.asyncio
+    async def test_lint_non_diagnostic_failure_is_error(self, adapter: BicepInfraProviderAdapter, sample_files: list[dict]) -> None:
+        with mock.patch("asyncio.create_subprocess_exec") as mock_subprocess:
+            mock_proc = mock.AsyncMock()
+            mock_proc.returncode = 1
+            mock_proc.communicate = mock.AsyncMock(return_value=(b"", b"fatal: lint crashed"))
+            mock_subprocess.return_value = mock_proc
+
+            result = await adapter.lint(sample_files)
+            assert result.valid is False
+            assert any("lint crashed" in err for err in result.errors)
+
 
 class TestPlanApply:
     @pytest.mark.asyncio
@@ -164,12 +176,48 @@ class TestPlanApply:
             assert stored["work_dir"] is not None
 
     @pytest.mark.asyncio
+    async def test_plan_parses_stdout_json_when_stderr_present(
+        self, adapter: BicepInfraProviderAdapter, sample_files: list[dict]
+    ) -> None:
+        with mock.patch("asyncio.create_subprocess_exec") as mock_subprocess:
+            mock_proc = mock.AsyncMock()
+            mock_proc.returncode = 0
+            mock_proc.communicate = mock.AsyncMock(
+                return_value=(
+                    json.dumps({"changes": [{"changeType": "Create"}, {"changeType": "Delete"}]}).encode(),
+                    b"warning from stderr",
+                )
+            )
+            mock_subprocess.return_value = mock_proc
+
+            result = await adapter.plan(sample_files, {"resource_group": "rg-test"})
+            assert result.success is True
+            assert result.resources_to_create == 1
+            assert result.resources_to_destroy == 1
+            assert "warning from stderr" in result.output
+
+    @pytest.mark.asyncio
+    async def test_plan_accepts_deployment_name_camel_case(
+        self, adapter: BicepInfraProviderAdapter, sample_files: list[dict]
+    ) -> None:
+        with mock.patch("asyncio.create_subprocess_exec") as mock_subprocess:
+            mock_proc = mock.AsyncMock()
+            mock_proc.returncode = 0
+            mock_proc.communicate = mock.AsyncMock(return_value=(json.dumps({"changes": []}).encode(), b""))
+            mock_subprocess.return_value = mock_proc
+
+            result = await adapter.plan(sample_files, {"resource_group": "rg-test", "deploymentName": "dep-camel"})
+            assert result.success is True
+            stored = next(iter(adapter._plan_storage.values()))
+            assert stored["deployment_name"] == "dep-camel"
+
+    @pytest.mark.asyncio
     async def test_apply_uses_group_create(self, adapter: BicepInfraProviderAdapter) -> None:
         from pathlib import Path
         import tempfile
 
         with tempfile.TemporaryDirectory() as tmp:
-            work_dir = Path(tmp) / "plan-success-dir"
+            work_dir = Path(tmp) / "bicep_plan_success-dir"
             work_dir.mkdir()
             adapter._plan_storage["plan-1"] = {
                 "resource_group": "rg-test",
@@ -190,22 +238,31 @@ class TestPlanApply:
                 assert result.success is True
                 assert "plan-1" not in adapter._plan_storage
                 assert not work_dir.exists()
+                assert result.resources_created == []
                 args = mock_subprocess.call_args.args
                 assert list(args[:4]) == ["az", "deployment", "group", "create"]
 
     @pytest.mark.asyncio
     async def test_apply_invalid_plan_context(self, adapter: BicepInfraProviderAdapter) -> None:
-        adapter._plan_storage["plan-2"] = {
-            "resource_group": None,
-            "deployment_name": "dep-test",
-            "template_file": "/tmp/main.bicep",
-            "parameters_file": None,
-            "work_dir": "/tmp",
-        }
+        from pathlib import Path
+        import tempfile
 
-        result = await adapter.apply("plan-2")
-        assert result.success is False
-        assert "missing required deployment fields" in result.errors[0]
+        with tempfile.TemporaryDirectory() as tmp:
+            work_dir = Path(tmp) / "bicep_plan_invalid"
+            work_dir.mkdir()
+            adapter._plan_storage["plan-2"] = {
+                "resource_group": None,
+                "deployment_name": "dep-test",
+                "template_file": "/tmp/main.bicep",
+                "parameters_file": None,
+                "work_dir": str(work_dir),
+            }
+
+            result = await adapter.apply("plan-2")
+            assert result.success is False
+            assert "missing required deployment fields" in result.errors[0]
+            assert "plan-2" not in adapter._plan_storage
+            assert not work_dir.exists()
 
     @pytest.mark.asyncio
     async def test_apply_failure_cleans_up_storage_and_directory(self, adapter: BicepInfraProviderAdapter) -> None:
@@ -213,7 +270,7 @@ class TestPlanApply:
         import tempfile
 
         with tempfile.TemporaryDirectory() as tmp:
-            work_dir = Path(tmp) / "plan-dir"
+            work_dir = Path(tmp) / "bicep_plan_failure-dir"
             work_dir.mkdir()
             adapter._plan_storage["plan-3"] = {
                 "resource_group": "rg-test",
@@ -294,3 +351,52 @@ class TestHelperMethods:
             assert "resource_group" not in filtered_data["parameters"]
             assert "deploymentName" not in filtered_data["parameters"]
             assert filtered_data["parameters"]["project"]["value"] == "demo"
+
+    def test_write_files_rejects_unsafe_paths(self, adapter: BicepInfraProviderAdapter) -> None:
+        from pathlib import Path
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmpdir = Path(tmp)
+            with pytest.raises(ValueError):
+                adapter._write_files([{"path": "../escape.bicep", "content": "x"}], tmpdir)
+            with pytest.raises(ValueError):
+                adapter._write_files([{"path": "/etc/passwd", "content": "x"}], tmpdir)
+
+    @pytest.mark.asyncio
+    async def test_apply_parses_created_resources_from_stdout(self, adapter: BicepInfraProviderAdapter) -> None:
+        from pathlib import Path
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            work_dir = Path(tmp) / "bicep_plan_apply_parse"
+            work_dir.mkdir()
+            adapter._plan_storage["plan-4"] = {
+                "resource_group": "rg-test",
+                "deployment_name": "dep-test",
+                "template_file": "/tmp/main.bicep",
+                "parameters_file": None,
+                "work_dir": str(work_dir),
+            }
+
+            with mock.patch("asyncio.create_subprocess_exec") as mock_subprocess:
+                mock_proc = mock.AsyncMock()
+                mock_proc.returncode = 0
+                mock_proc.communicate = mock.AsyncMock(
+                    return_value=(
+                        json.dumps(
+                            {
+                                "properties": {
+                                    "outputs": {"createdResources": {"value": ["res-a", "res-b"]}}
+                                }
+                            }
+                        ).encode(),
+                        b"warning from stderr",
+                    )
+                )
+                mock_subprocess.return_value = mock_proc
+
+                result = await adapter.apply("plan-4")
+
+            assert result.success is True
+            assert result.resources_created == ["res-a", "res-b"]

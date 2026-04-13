@@ -23,6 +23,7 @@ from src.application.ports.ports import (
 logger = logging.getLogger(__name__)
 
 _BICEP_CODE_RE = re.compile(r"\b(?P<level>Error|Warning)\s+(?P<code>BCP\d{3})\b", re.IGNORECASE)
+_BICEP_ANY_CODE_RE = re.compile(r"\bBCP\d{3}\b", re.IGNORECASE)
 _IGNORED_LINT_CODES = {"BCP081", "BCP187"}
 _REQUIRED_LINT_CODES = {"BCP035"}
 
@@ -37,7 +38,10 @@ class BicepInfraProviderAdapter(IInfraProviderPort):
     async def format_check(self, files: list[dict]) -> ValidationResult:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp = Path(tmpdir)
-            bicep_files = self._write_files(files, tmp)
+            try:
+                bicep_files = self._write_files(files, tmp)
+            except ValueError as exc:
+                return ValidationResult(valid=False, errors=[str(exc)])
 
             errors: list[str] = []
             for bicep_file in bicep_files:
@@ -70,7 +74,10 @@ class BicepInfraProviderAdapter(IInfraProviderPort):
     async def validate(self, files: list[dict]) -> ValidationResult:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp = Path(tmpdir)
-            bicep_files = self._write_files(files, tmp)
+            try:
+                bicep_files = self._write_files(files, tmp)
+            except ValueError as exc:
+                return ValidationResult(valid=False, errors=[str(exc)])
 
             errors: list[str] = []
             for bicep_file in bicep_files:
@@ -97,7 +104,10 @@ class BicepInfraProviderAdapter(IInfraProviderPort):
     async def lint(self, files: list[dict]) -> ValidationResult:
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp = Path(tmpdir)
-            bicep_files = self._write_files(files, tmp)
+            try:
+                bicep_files = self._write_files(files, tmp)
+            except ValueError as exc:
+                return ValidationResult(valid=False, errors=[str(exc)])
 
             errors: list[str] = []
             warnings: list[str] = []
@@ -119,6 +129,13 @@ class BicepInfraProviderAdapter(IInfraProviderPort):
                 file_errors, file_warnings = self._triage_lint_output(output)
                 errors.extend(file_errors)
                 warnings.extend(file_warnings)
+                if (
+                    proc.returncode != 0
+                    and not file_errors
+                    and not file_warnings
+                    and not _BICEP_ANY_CODE_RE.search(output)
+                ):
+                    errors.append(output or f"Bicep lint failed for {bicep_file.name}")
 
             return ValidationResult(valid=not errors, errors=errors, warnings=warnings)
 
@@ -149,7 +166,11 @@ class BicepInfraProviderAdapter(IInfraProviderPort):
                     resources_to_destroy=0,
                 )
 
-            deployment_name = (variables.get("deployment_name") or f"infraagent-{plan_id}").strip()
+            deployment_name = (
+                variables.get("deployment_name")
+                or variables.get("deploymentName")
+                or f"infraagent-{plan_id}"
+            ).strip()
             params_path = self._write_parameters_file(variables, tmpdir)
 
             command = [
@@ -186,8 +207,10 @@ class BicepInfraProviderAdapter(IInfraProviderPort):
                     resources_to_destroy=0,
                 )
 
-            output = (stdout.decode(errors="replace") + stderr.decode(errors="replace")).strip()
-            create_count, modify_count, destroy_count = self._parse_what_if_output(output)
+            stdout_output = stdout.decode(errors="replace").strip()
+            stderr_output = stderr.decode(errors="replace").strip()
+            output = "\n".join(part for part in (stdout_output, stderr_output) if part)
+            create_count, modify_count, destroy_count = self._parse_what_if_output(stdout_output)
             success = proc.returncode == 0
 
             if success:
@@ -239,31 +262,31 @@ class BicepInfraProviderAdapter(IInfraProviderPort):
         deployment_name = plan_context.get("deployment_name")
         params_file = plan_context.get("parameters_file")
 
-        if not resource_group or not deployment_name or not template_file:
-            return ApplyResult(
-                success=False,
-                output="Invalid plan context",
-                errors=["Plan context is missing required deployment fields"],
-            )
-
-        command = [
-            "az",
-            "deployment",
-            "group",
-            "create",
-            "--resource-group",
-            resource_group,
-            "--name",
-            deployment_name,
-            "--template-file",
-            template_file,
-            "--output",
-            "json",
-        ]
-        if params_file:
-            command.extend(["--parameters", f"@{params_file}"])
-
         try:
+            if not resource_group or not deployment_name or not template_file:
+                return ApplyResult(
+                    success=False,
+                    output="Invalid plan context",
+                    errors=["Plan context is missing required deployment fields"],
+                )
+
+            command = [
+                "az",
+                "deployment",
+                "group",
+                "create",
+                "--resource-group",
+                resource_group,
+                "--name",
+                deployment_name,
+                "--template-file",
+                template_file,
+                "--output",
+                "json",
+            ]
+            if params_file:
+                command.extend(["--parameters", f"@{params_file}"])
+
             try:
                 proc = await asyncio.create_subprocess_exec(
                     *command,
@@ -279,25 +302,25 @@ class BicepInfraProviderAdapter(IInfraProviderPort):
                     errors=["Azure CLI not installed"],
                 )
 
-            output = (stdout.decode(errors="replace") + stderr.decode(errors="replace")).strip()
+            stdout_output = stdout.decode(errors="replace").strip()
+            stderr_output = stderr.decode(errors="replace").strip()
+            output = "\n".join(part for part in (stdout_output, stderr_output) if part)
+            resources_created = self._parse_created_resources(stdout_output) if proc.returncode == 0 else []
             return ApplyResult(
                 success=proc.returncode == 0,
                 output=output,
-                resources_created=self._parse_created_resources(output),
+                resources_created=resources_created,
                 errors=[] if proc.returncode == 0 else [output],
             )
         finally:
             self._plan_storage.pop(plan_id, None)
-            if work_dir and Path(work_dir).exists():
-                try:
-                    shutil.rmtree(work_dir)
-                except OSError as exc:
-                    self.logger.warning("Failed to clean up plan directory %s: %s", work_dir, exc)
+            self._cleanup_work_dir(work_dir)
 
     def get_language(self) -> str:
         return "bicep"
 
     def _write_files(self, files: list[dict], base_dir: Path) -> list[Path]:
+        base_resolved = base_dir.resolve()
         bicep_files: list[Path] = []
         for file_dict in files:
             path = file_dict.get("path", "")
@@ -305,7 +328,16 @@ class BicepInfraProviderAdapter(IInfraProviderPort):
             if not path:
                 continue
 
-            destination = base_dir / path
+            requested_path = Path(path)
+            if requested_path.is_absolute():
+                raise ValueError(f"Absolute paths are not allowed: {path}")
+
+            destination = (base_dir / requested_path).resolve()
+            try:
+                destination.relative_to(base_resolved)
+            except ValueError as exc:
+                raise ValueError(f"Path escapes workspace: {path}") from exc
+
             destination.parent.mkdir(parents=True, exist_ok=True)
             destination.write_text(content, encoding="utf-8")
             if destination.suffix == ".bicep":
@@ -317,14 +349,21 @@ class BicepInfraProviderAdapter(IInfraProviderPort):
         warnings: list[str] = []
 
         for line in output.splitlines():
+            normalized = line.strip()
+            if not normalized:
+                continue
+
             match = _BICEP_CODE_RE.search(line)
             if not match:
+                lowered = normalized.lower()
+                if "error" in lowered:
+                    errors.append(normalized)
+                elif "warn" in lowered:
+                    warnings.append(normalized)
                 continue
 
             code = match.group("code").upper()
             level = match.group("level").lower()
-            normalized = line.strip()
-
             if code in _IGNORED_LINT_CODES:
                 continue
             if code in _REQUIRED_LINT_CODES or level == "error":
@@ -430,3 +469,22 @@ class BicepInfraProviderAdapter(IInfraProviderPort):
         if value is None:
             self.logger.debug("No createdResources output found in deployment response")
         return value if isinstance(value, list) else []
+
+    def _cleanup_work_dir(self, work_dir: str | None) -> None:
+        if not work_dir:
+            return
+
+        work_path = Path(work_dir)
+        if not work_path.exists():
+            return
+
+        temp_root = Path(tempfile.gettempdir()).resolve()
+        resolved_work_path = work_path.resolve()
+        if not resolved_work_path.name.startswith("bicep_plan_") or temp_root not in resolved_work_path.parents:
+            self.logger.warning("Skipping unsafe cleanup path: %s", resolved_work_path)
+            return
+
+        try:
+            shutil.rmtree(resolved_work_path)
+        except OSError as exc:
+            self.logger.warning("Failed to clean up plan directory %s: %s", resolved_work_path, exc)
