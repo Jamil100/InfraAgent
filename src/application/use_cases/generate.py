@@ -94,10 +94,9 @@ class GenerateUseCase:
         provider = self._infra[language.value]
         all_violations: list[dict[str, Any]] = []
         latest_files: list[GeneratedFile] = []
-        standards_passed = True
-        security_passed = True
 
         for iteration in range(1, MAX_MAKER_CHECKER_ITERATIONS + 1):
+            iteration_violations: list[dict[str, Any]] = []
             self._obs.start_span(
                 "generate_iteration",
                 {"iteration": iteration, "language": language.value},
@@ -111,14 +110,34 @@ class GenerateUseCase:
                 project_type=project_type,
                 subscription_context=subscription_context,
             )
+            if not latest_files:
+                iteration_violations.append(
+                    _violation(
+                        checker="codegen",
+                        severity="error",
+                        message="Code generation returned no files.",
+                    )
+                )
+                all_violations.extend(iteration_violations)
+                continue
 
             iac_validation = await self._run_iac_validation_pipeline(
                 provider,
                 latest_files,
                 language,
             )
+            iteration_violations.extend(
+                [
+                    _violation(
+                        checker="iac_validation",
+                        severity="warning",
+                        message=warning,
+                    )
+                    for warning in iac_validation["warnings"]
+                ]
+            )
             if not iac_validation["passed"]:
-                all_violations.extend(
+                iteration_violations.extend(
                     [
                         _violation(
                             checker="iac_validation",
@@ -128,6 +147,7 @@ class GenerateUseCase:
                         for error in iac_validation["errors"]
                     ]
                 )
+                all_violations.extend(iteration_violations)
                 continue
 
             file_dicts = _as_file_dicts(latest_files)
@@ -138,8 +158,8 @@ class GenerateUseCase:
                 for v in [*naming.violations, *tags.violations]
             ]
             if standards_violations:
-                standards_passed = False
-                all_violations.extend(standards_violations)
+                iteration_violations.extend(standards_violations)
+                all_violations.extend(iteration_violations)
                 continue
 
             security = await self._policy.validate_security(file_dicts)
@@ -147,8 +167,8 @@ class GenerateUseCase:
                 _policy_violation_to_dict("security", v) for v in security.violations
             ]
             if security_violations:
-                security_passed = False
-                all_violations.extend(security_violations)
+                iteration_violations.extend(security_violations)
+                all_violations.extend(iteration_violations)
                 continue
 
             diagram = await self._generate_diagram(latest_files, language)
@@ -157,7 +177,7 @@ class GenerateUseCase:
                 files=latest_files,
                 standards_passed=True,
                 security_passed=True,
-                violations=[],
+                violations=iteration_violations,
                 iteration_count=iteration,
                 diagram_mermaid=diagram,
                 assistant_message=(
@@ -168,8 +188,8 @@ class GenerateUseCase:
         self._obs.record_metric("generate_max_iterations_reached", 1.0)
         return GenerateResult(
             files=latest_files,
-            standards_passed=standards_passed,
-            security_passed=security_passed,
+            standards_passed=False,
+            security_passed=False,
             violations=all_violations,
             iteration_count=MAX_MAKER_CHECKER_ITERATIONS,
             diagram_mermaid=None,
@@ -415,7 +435,7 @@ def _policy_violation_to_dict(checker: str, violation: PolicyViolation) -> dict[
         message = f"{violation.policy} (expected: {violation.expected}, actual: {violation.actual})"
     return _violation(
         checker=checker,
-        severity=violation.severity,
+        severity=_map_policy_severity(violation.severity),
         resource=violation.resource,
         message=message,
         remediation=violation.remediation,
@@ -440,3 +460,13 @@ def _violation(
         "message": message,
         "remediation": remediation,
     }
+
+
+def _map_policy_severity(severity: str) -> str:
+    """Normalize policy severities to domain-supported values: error/warning/info."""
+    normalized = severity.lower()
+    if normalized in {"critical", "high", "error"}:
+        return "error"
+    if normalized in {"medium", "low", "warning", "warn"}:
+        return "warning"
+    return "info"

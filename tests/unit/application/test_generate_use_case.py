@@ -6,7 +6,7 @@ import pytest
 
 from src.application.ports.infra_provider_port import ValidationResult
 from src.application.ports.llm_port import LLMResponse
-from src.application.ports.policy_engine_port import PolicyResult
+from src.application.ports.policy_engine_port import PolicyResult, PolicyViolation
 from src.application.ports.template_registry_port import HydratedTemplate, TemplateMetadata
 from src.application.use_cases.generate import GenerateUseCase
 from src.domain.models.models import GeneratedFile, IaCLanguage
@@ -43,7 +43,9 @@ async def test_run_custom_path_success() -> None:
     provider = Mock()
     provider.format_check = AsyncMock(return_value=ValidationResult(valid=True))
     provider.validate = AsyncMock(return_value=ValidationResult(valid=True))
-    provider.lint = AsyncMock(return_value=ValidationResult(valid=True))
+    provider.lint = AsyncMock(
+        return_value=ValidationResult(valid=True, warnings=["deprecated attribute"])
+    )
 
     templates = Mock()
     obs = Mock()
@@ -73,6 +75,17 @@ async def test_run_custom_path_success() -> None:
     assert result.security_passed is True
     assert result.iteration_count == 1
     assert result.diagram_mermaid == "graph TD\nA-->B"
+    assert result.violations == [
+        {
+            "checker": "iac_validation",
+            "severity": "warning",
+            "resource": "",
+            "file": "",
+            "line": 0,
+            "message": "deprecated attribute",
+            "remediation": "",
+        }
+    ]
     llm.complete_with_tools.assert_awaited_once()
     llm.complete.assert_awaited_once()
 
@@ -119,8 +132,8 @@ async def test_run_custom_path_stops_after_max_iterations() -> None:
     )
 
     assert result.iteration_count == 3
-    assert result.standards_passed is True
-    assert result.security_passed is True
+    assert result.standards_passed is False
+    assert result.security_passed is False
     assert len(result.violations) == 3
     assert all(v["checker"] == "iac_validation" for v in result.violations)
     policy.validate_naming.assert_not_called()
@@ -227,3 +240,114 @@ async def test_run_catalog_path_hydrates_template_and_validates_syntax_only() ->
     policy.validate_naming.assert_not_called()
     policy.validate_tags.assert_not_called()
     policy.validate_security.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_run_custom_path_retries_when_codegen_returns_no_files() -> None:
+    llm = Mock()
+    llm.complete_with_tools = AsyncMock(return_value=LLMResponse(content="not-json"))
+    llm.complete = AsyncMock(return_value=LLMResponse(content="graph TD\nA-->B"))
+
+    policy = Mock()
+    policy.validate_naming = AsyncMock(return_value=PolicyResult(passed=True, violations=[]))
+    policy.validate_tags = AsyncMock(return_value=PolicyResult(passed=True, violations=[]))
+    policy.validate_security = AsyncMock(return_value=PolicyResult(passed=True, violations=[]))
+
+    provider = Mock()
+    provider.format_check = AsyncMock(return_value=ValidationResult(valid=True))
+    provider.validate = AsyncMock(return_value=ValidationResult(valid=True))
+    provider.lint = AsyncMock(return_value=ValidationResult(valid=True))
+
+    templates = Mock()
+    obs = Mock()
+    obs.start_span = Mock(return_value=None)
+    obs.record_metric = Mock(return_value=None)
+    obs.log = Mock(return_value=None)
+
+    use_case = GenerateUseCase(
+        llm=llm,
+        policy=policy,
+        templates=templates,
+        infra_providers={"bicep": provider},
+        observability=obs,
+    )
+
+    result = await use_case.run_custom_path(
+        requirements="create a vnet",
+        language=IaCLanguage.BICEP,
+        conversation_history=[],
+        mcp_tool_executor=Mock(return_value={}),
+    )
+
+    assert result.iteration_count == 3
+    assert result.files == []
+    assert result.standards_passed is False
+    assert result.security_passed is False
+    assert len(result.violations) == 3
+    assert all(v["checker"] == "codegen" for v in result.violations)
+    assert llm.complete_with_tools.await_count == 3
+    provider.format_check.assert_not_called()
+    provider.validate.assert_not_called()
+    provider.lint.assert_not_called()
+    policy.validate_naming.assert_not_called()
+    policy.validate_tags.assert_not_called()
+    policy.validate_security.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_run_custom_path_maps_policy_severity_to_supported_values() -> None:
+    llm = Mock()
+    llm.complete_with_tools = AsyncMock(
+        return_value=LLMResponse(
+            content='```json\n{"files":[{"path":"infra/main.bicep","content":"resource x"}]}\n```'
+        )
+    )
+    llm.complete = AsyncMock(return_value=LLMResponse(content="graph TD\nA-->B"))
+
+    policy = Mock()
+    policy.validate_naming = AsyncMock(
+        return_value=PolicyResult(
+            passed=False,
+            violations=[
+                PolicyViolation(
+                    resource="vnet1",
+                    policy="naming",
+                    severity="high",
+                    expected="env-project-vnet",
+                    actual="badname",
+                    remediation="Fix naming",
+                )
+            ],
+        )
+    )
+    policy.validate_tags = AsyncMock(return_value=PolicyResult(passed=True, violations=[]))
+    policy.validate_security = AsyncMock(return_value=PolicyResult(passed=True, violations=[]))
+
+    provider = Mock()
+    provider.format_check = AsyncMock(return_value=ValidationResult(valid=True))
+    provider.validate = AsyncMock(return_value=ValidationResult(valid=True))
+    provider.lint = AsyncMock(return_value=ValidationResult(valid=True))
+
+    templates = Mock()
+    obs = Mock()
+    obs.start_span = Mock(return_value=None)
+    obs.record_metric = Mock(return_value=None)
+    obs.log = Mock(return_value=None)
+
+    use_case = GenerateUseCase(
+        llm=llm,
+        policy=policy,
+        templates=templates,
+        infra_providers={"bicep": provider},
+        observability=obs,
+    )
+
+    result = await use_case.run_custom_path(
+        requirements="create a vnet",
+        language=IaCLanguage.BICEP,
+        conversation_history=[],
+        mcp_tool_executor=Mock(return_value={}),
+    )
+
+    assert result.iteration_count == 3
+    assert any(v["checker"] == "standards" and v["severity"] == "error" for v in result.violations)
