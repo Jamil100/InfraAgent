@@ -6,6 +6,7 @@ import asyncio
 import inspect
 import json
 import logging
+from collections.abc import Callable
 from typing import Any
 
 from azure.ai.projects.aio import AIProjectClient
@@ -23,6 +24,9 @@ from src.application.ports.llm_port import (
 from src.config import settings
 
 logger = logging.getLogger(__name__)
+_MODEL_ROUTER_PARAM_SUPPORT_CACHE: dict[int, bool] = {}
+_DEFAULT_TEMPERATURE = 0.2
+_DEFAULT_MAX_TOKENS = 4096
 
 _PROFILE_TO_MODEL = {
     "complex-reasoning": "gpt-4o",
@@ -33,8 +37,16 @@ _PROFILE_TO_MODEL = {
 }
 _FALLBACK_MODEL = {
     "gpt-4o": "gpt-4o-mini",
-    "gpt-4o-mini": "gpt-4o",
 }
+
+
+def _supports_model_router_profile_param(create_callable: Any) -> bool:
+    cache_key = id(create_callable)
+    if cache_key not in _MODEL_ROUTER_PARAM_SUPPORT_CACHE:
+        _MODEL_ROUTER_PARAM_SUPPORT_CACHE[cache_key] = "model_router_profile" in inspect.signature(
+            create_callable
+        ).parameters
+    return _MODEL_ROUTER_PARAM_SUPPORT_CACHE[cache_key]
 
 
 class AzureOpenAIAdapter(ILLMCompletionPort):
@@ -58,8 +70,8 @@ class AzureOpenAIAdapter(ILLMCompletionPort):
         self._max_retries = max_retries
         self._base_backoff_seconds = base_backoff_seconds
         self._max_tool_iterations = max_tool_iterations
-        self._supports_model_router_profile_param = (
-            "model_router_profile" in inspect.signature(self._openai_client.chat.completions.create).parameters
+        self._supports_model_router_profile_param = _supports_model_router_profile_param(
+            self._openai_client.chat.completions.create
         )
 
     async def complete(
@@ -81,7 +93,7 @@ class AzureOpenAIAdapter(ILLMCompletionPort):
         system_prompt: str,
         messages: list[LLMMessage],
         tools: list[ToolDefinition],
-        tool_executor: callable,
+        tool_executor: Callable[..., Any],
         task_profile: TaskProfile | None = None,
     ) -> LLMResponse:
         conversation = self._build_messages(system_prompt, messages)
@@ -168,15 +180,15 @@ class AzureOpenAIAdapter(ILLMCompletionPort):
         kwargs: dict[str, Any] = {
             "model": model,
             "messages": messages,
-            "temperature": task_profile.temperature if task_profile else 0.2,
-            "max_tokens": task_profile.max_tokens if task_profile else 4096,
+            "temperature": task_profile.temperature if task_profile else _DEFAULT_TEMPERATURE,
+            "max_tokens": task_profile.max_tokens if task_profile else _DEFAULT_MAX_TOKENS,
         }
         if tools:
             kwargs["tools"] = tools
 
         if task_profile:
-            # SDK verification: this SDK version does not expose model_router_profile as a first-class
-            # parameter on chat.completions.create, so we pass it through extra_body when needed.
+            # SDK verification (azure-ai-projects 2.0.1, inspected 2026-04): no first-class
+            # model_router_profile parameter on chat.completions.create, so use extra_body.
             if self._supports_model_router_profile_param:
                 kwargs["model_router_profile"] = task_profile.profile
             else:
@@ -267,6 +279,7 @@ class AzureOpenAIAdapter(ILLMCompletionPort):
         try:
             parsed = json.loads(value)
         except (json.JSONDecodeError, TypeError):
+            logger.debug("Failed to parse tool arguments as JSON; using empty dict")
             return {}
         return parsed if isinstance(parsed, dict) else {}
 
@@ -276,7 +289,7 @@ class AzureOpenAIAdapter(ILLMCompletionPort):
         if isinstance(exc, APIStatusError):
             return exc.status_code in (408, 409, 425, 429, 500, 502, 503, 504)
         text = str(exc).lower()
-        return "timeout" in text or "temporar" in text or "rate limit" in text
+        return any(token in text for token in ("timeout", "temporary", "temporarily", "rate limit"))
 
     def _should_fallback_model(self, exc: Exception) -> bool:
         if isinstance(exc, RateLimitError):
@@ -284,7 +297,7 @@ class AzureOpenAIAdapter(ILLMCompletionPort):
         if isinstance(exc, APIStatusError) and exc.status_code in (404, 429, 500, 502, 503):
             return True
         text = str(exc).lower()
-        return "rate limit" in text or "model" in text and ("not found" in text or "unavailable" in text)
+        return "rate limit" in text or ("model" in text and ("not found" in text or "unavailable" in text))
 
     def _to_openai_tool_call(self, tool_call: dict[str, Any]) -> dict[str, Any]:
         raw_arguments = tool_call.get("arguments_raw")
@@ -299,10 +312,17 @@ class AzureOpenAIAdapter(ILLMCompletionPort):
             },
         }
 
-    async def _execute_tool(self, tool_executor: callable, name: str, args: dict[str, Any], raw_call: dict[str, Any]) -> Any:
+    async def _execute_tool(
+        self,
+        tool_executor: Callable[..., Any],
+        name: str,
+        args: dict[str, Any],
+        raw_call: dict[str, Any],
+    ) -> Any:
         try:
             result = tool_executor(name, args)
-        except TypeError:
+        except TypeError as exc:
+            logger.warning("Tool executor signature mismatch for '%s': %s; retrying with raw call", name, exc)
             result = tool_executor(raw_call)
         if inspect.isawaitable(result):
             return await result

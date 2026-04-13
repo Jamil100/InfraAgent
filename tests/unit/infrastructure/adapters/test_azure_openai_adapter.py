@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from types import SimpleNamespace
 from unittest import mock
 
@@ -124,3 +125,46 @@ async def test_complete_with_tools_executes_tool_loop() -> None:
     tool_executor.assert_awaited_once_with("lookup", {"id": "42"})
     second_call_messages = create_mock.await_args_list[1].kwargs["messages"]
     assert any(msg.get("role") == "tool" and msg.get("tool_call_id") == "call-1" for msg in second_call_messages)
+
+
+def test_extract_content_supports_multiple_shapes() -> None:
+    adapter = _adapter_with_create(mock.AsyncMock(return_value=_fake_response()))
+
+    assert adapter._extract_content(None) == ""
+    assert adapter._extract_content("plain text") == "plain text"
+    assert adapter._extract_content([{"text": "a"}, {"text": "b"}]) == "ab"
+    assert adapter._extract_content([SimpleNamespace(text="x"), SimpleNamespace(text="y")]) == "xy"
+
+
+def test_extract_tool_calls_parses_function_payload(caplog: pytest.LogCaptureFixture) -> None:
+    adapter = _adapter_with_create(mock.AsyncMock(return_value=_fake_response()))
+    calls = [
+        SimpleNamespace(
+            id="id-1",
+            type="function",
+            function=SimpleNamespace(name="tool_a", arguments='{"a":1}'),
+        ),
+        SimpleNamespace(
+            id="id-2",
+            type="function",
+            function=SimpleNamespace(name="tool_b", arguments="not-json"),
+        ),
+    ]
+
+    with caplog.at_level(logging.DEBUG):
+        extracted = adapter._extract_tool_calls(calls)
+
+    assert extracted is not None
+    assert extracted[0]["id"] == "id-1"
+    assert extracted[0]["type"] == "function"
+    assert extracted[0]["name"] == "tool_a"
+    assert extracted[0]["arguments"] == {"a": 1}
+    assert extracted[1]["arguments"] == {}
+    assert "Failed to parse tool arguments as JSON" in caplog.text
+
+
+def test_serialize_tool_result_handles_string_and_json() -> None:
+    adapter = _adapter_with_create(mock.AsyncMock(return_value=_fake_response()))
+
+    assert adapter._serialize_tool_result("raw string") == "raw string"
+    assert adapter._serialize_tool_result({"x": 1}) == '{"x": 1}'
