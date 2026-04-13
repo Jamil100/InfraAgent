@@ -217,7 +217,7 @@ class TestPlanApply:
         import tempfile
 
         with tempfile.TemporaryDirectory() as tmp:
-            work_dir = Path(tmp) / "bicep_plan_success-dir"
+            work_dir = Path(tmp) / "bicep_plan_success"
             work_dir.mkdir()
             adapter._plan_storage["plan-1"] = {
                 "resource_group": "rg-test",
@@ -270,7 +270,7 @@ class TestPlanApply:
         import tempfile
 
         with tempfile.TemporaryDirectory() as tmp:
-            work_dir = Path(tmp) / "bicep_plan_failure-dir"
+            work_dir = Path(tmp) / "bicep_plan_failure"
             work_dir.mkdir()
             adapter._plan_storage["plan-3"] = {
                 "resource_group": "rg-test",

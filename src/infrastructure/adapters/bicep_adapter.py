@@ -24,6 +24,8 @@ logger = logging.getLogger(__name__)
 
 _BICEP_CODE_RE = re.compile(r"\b(?P<level>Error|Warning)\s+(?P<code>BCP\d{3})\b", re.IGNORECASE)
 _BICEP_ANY_CODE_RE = re.compile(r"\bBCP\d{3}\b", re.IGNORECASE)
+_ERROR_WORD_RE = re.compile(r"\berror\b", re.IGNORECASE)
+_WARN_WORD_RE = re.compile(r"\bwarning\b|\bwarn\b", re.IGNORECASE)
 _IGNORED_LINT_CODES = {"BCP081", "BCP187"}
 _REQUIRED_LINT_CODES = {"BCP035"}
 
@@ -355,10 +357,9 @@ class BicepInfraProviderAdapter(IInfraProviderPort):
 
             match = _BICEP_CODE_RE.search(line)
             if not match:
-                lowered = normalized.lower()
-                if "error" in lowered:
+                if _ERROR_WORD_RE.search(normalized):
                     errors.append(normalized)
-                elif "warn" in lowered:
+                elif _WARN_WORD_RE.search(normalized):
                     warnings.append(normalized)
                 continue
 
