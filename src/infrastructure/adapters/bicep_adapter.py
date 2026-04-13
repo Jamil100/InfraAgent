@@ -481,8 +481,11 @@ class BicepInfraProviderAdapter(IInfraProviderPort):
 
         temp_root = Path(tempfile.gettempdir()).resolve()
         resolved_work_path = work_path.resolve()
-        in_temp_root = resolved_work_path.parent == temp_root or temp_root in resolved_work_path.parents
-        if not resolved_work_path.name.startswith("bicep_plan_") or not in_temp_root:
+        if not resolved_work_path.is_relative_to(temp_root):
+            self.logger.warning("Skipping unsafe cleanup path: %s", resolved_work_path)
+            return
+
+        if not resolved_work_path.name.startswith("bicep_plan_"):
             self.logger.warning("Skipping unsafe cleanup path: %s", resolved_work_path)
             return
 

@@ -400,3 +400,15 @@ class TestHelperMethods:
 
             assert result.success is True
             assert result.resources_created == ["res-a", "res-b"]
+
+    def test_cleanup_work_dir_skips_non_prefixed_paths(self, adapter: BicepInfraProviderAdapter) -> None:
+        from pathlib import Path
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            work_dir = Path(tmp) / "unsafe_dir_name"
+            work_dir.mkdir()
+
+            adapter._cleanup_work_dir(str(work_dir))
+
+            assert work_dir.exists()
