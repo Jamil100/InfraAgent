@@ -56,7 +56,8 @@ class BicepInfraProviderAdapter(IInfraProviderPort):
 
                 if proc.returncode != 0:
                     output = (stdout.decode(errors="replace") + stderr.decode(errors="replace")).strip()
-                    if 'Unrecognized parameter "--verify"' in output:
+                    normalized_output = output.lower()
+                    if "unrecognized" in normalized_output and "verify" in normalized_output:
                         fallback = await self._format_verify_via_stdout(bicep_file)
                         if fallback is None:
                             continue
@@ -148,7 +149,7 @@ class BicepInfraProviderAdapter(IInfraProviderPort):
                     resources_to_destroy=0,
                 )
 
-            deployment_name = (variables.get("deployment_name") or f"infraagent-{plan_id[:8]}").strip()
+            deployment_name = (variables.get("deployment_name") or f"infraagent-{plan_id}").strip()
             params_path = self._write_parameters_file(variables, tmpdir)
 
             command = [
@@ -405,7 +406,7 @@ class BicepInfraProviderAdapter(IInfraProviderPort):
 
         changes = data.get("changes", [])
         for change in changes:
-            change_type = str(change.get("changeType", "")).lower()
+            change_type = str(change.get("changeType") or "").lower()
             if change_type == "create":
                 create_count += 1
             # Azure what-if reports in-place updates as "Modify".
@@ -426,4 +427,6 @@ class BicepInfraProviderAdapter(IInfraProviderPort):
         outputs = properties.get("outputs", {})
         resources = outputs.get("createdResources", {})
         value = resources.get("value") if isinstance(resources, dict) else None
+        if value is None:
+            self.logger.debug("No createdResources output found in deployment response")
         return value if isinstance(value, list) else []
