@@ -197,6 +197,7 @@ class BicepInfraProviderAdapter(IInfraProviderPort):
                     "parameters_file": str(params_path) if params_path else None,
                     "work_dir": str(tmpdir),
                 }
+                self.logger.debug("Stored bicep plan %s in %s", plan_id, tmpdir)
                 persisted_plan = True
 
             return PlanResult(
@@ -407,6 +408,8 @@ class BicepInfraProviderAdapter(IInfraProviderPort):
             change_type = str(change.get("changeType", "")).lower()
             if change_type == "create":
                 create_count += 1
+            # Azure what-if reports in-place updates with either "Modify" or "Deploy";
+            # both represent non-create/non-delete change operations.
             elif change_type in {"modify", "deploy"}:
                 modify_count += 1
             elif change_type == "delete":
