@@ -139,8 +139,23 @@ class TestPlanApply:
             result = await adapter.apply("plan-1")
 
             assert result.success is True
+            assert "plan-1" not in adapter._plan_storage
             args = mock_subprocess.call_args.args
             assert list(args[:4]) == ["az", "deployment", "group", "create"]
+
+    @pytest.mark.asyncio
+    async def test_apply_invalid_plan_context(self, adapter: BicepInfraProviderAdapter) -> None:
+        adapter._plan_storage["plan-2"] = {
+            "resource_group": None,
+            "deployment_name": "dep-test",
+            "template_file": "/tmp/main.bicep",
+            "parameters_file": None,
+            "work_dir": "/tmp",
+        }
+
+        result = await adapter.apply("plan-2")
+        assert result.success is False
+        assert "missing required deployment fields" in result.errors[0]
 
 
 class TestGetLanguage:

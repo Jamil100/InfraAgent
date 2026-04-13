@@ -134,6 +134,7 @@ class BicepInfraProviderAdapter(IInfraProviderPort):
 
         plan_id = str(uuid.uuid4())
         tmpdir = Path(tempfile.mkdtemp(prefix=f"bicep_plan_{plan_id}_"))
+        persisted_plan = False
 
         try:
             bicep_files = self._write_files(files, tmpdir)
@@ -196,6 +197,7 @@ class BicepInfraProviderAdapter(IInfraProviderPort):
                     "parameters_file": str(params_path) if params_path else None,
                     "work_dir": str(tmpdir),
                 }
+                persisted_plan = True
 
             return PlanResult(
                 success=success,
@@ -213,6 +215,12 @@ class BicepInfraProviderAdapter(IInfraProviderPort):
                 resources_to_modify=0,
                 resources_to_destroy=0,
             )
+        finally:
+            if not persisted_plan and tmpdir.exists():
+                try:
+                    shutil.rmtree(tmpdir)
+                except OSError as exc:
+                    self.logger.warning("Failed to clean up plan directory %s: %s", tmpdir, exc)
 
     async def apply(self, plan_id: str) -> ApplyResult:
         plan_context = self._plan_storage.get(plan_id)
@@ -229,17 +237,24 @@ class BicepInfraProviderAdapter(IInfraProviderPort):
         deployment_name = plan_context.get("deployment_name")
         params_file = plan_context.get("parameters_file")
 
+        if not resource_group or not deployment_name or not template_file:
+            return ApplyResult(
+                success=False,
+                output="Invalid plan context",
+                errors=["Plan context is missing required deployment fields"],
+            )
+
         command = [
             "az",
             "deployment",
             "group",
             "create",
             "--resource-group",
-            resource_group or "",
+            resource_group,
             "--name",
-            deployment_name or "",
+            deployment_name,
             "--template-file",
-            template_file or "",
+            template_file,
             "--output",
             "json",
         ]
@@ -339,7 +354,7 @@ class BicepInfraProviderAdapter(IInfraProviderPort):
         return None
 
     def _select_template_file(self, bicep_files: list[Path], variables: dict[str, Any]) -> Path | None:
-        requested = variables.get("template_file")
+        requested = variables.get("template_file") or variables.get("templateFile")
         if isinstance(requested, str) and requested:
             return Path(requested)
 
@@ -354,7 +369,14 @@ class BicepInfraProviderAdapter(IInfraProviderPort):
         if isinstance(explicit, dict):
             params = explicit
         else:
-            control_keys = {"resource_group", "resourceGroup", "deployment_name", "template_file"}
+            control_keys = {
+                "resource_group",
+                "resourceGroup",
+                "deployment_name",
+                "deploymentName",
+                "template_file",
+                "templateFile",
+            }
             params = {k: v for k, v in variables.items() if k not in control_keys}
 
         if not params:
