@@ -408,9 +408,8 @@ class BicepInfraProviderAdapter(IInfraProviderPort):
             change_type = str(change.get("changeType", "")).lower()
             if change_type == "create":
                 create_count += 1
-            # Azure what-if reports in-place updates with either "Modify" or "Deploy";
-            # both represent non-create/non-delete change operations.
-            elif change_type in {"modify", "deploy"}:
+            # Azure what-if reports in-place updates as "Modify".
+            elif change_type == "modify":
                 modify_count += 1
             elif change_type == "delete":
                 destroy_count += 1

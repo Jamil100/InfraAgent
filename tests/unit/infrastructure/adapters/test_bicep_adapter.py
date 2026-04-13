@@ -201,6 +201,34 @@ class TestPlanApply:
         assert "missing required deployment fields" in result.errors[0]
 
     @pytest.mark.asyncio
+    async def test_apply_failure_cleans_up_storage_and_directory(self, adapter: BicepInfraProviderAdapter) -> None:
+        from pathlib import Path
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            work_dir = Path(tmp) / "plan-dir"
+            work_dir.mkdir()
+            adapter._plan_storage["plan-3"] = {
+                "resource_group": "rg-test",
+                "deployment_name": "dep-test",
+                "template_file": "/tmp/main.bicep",
+                "parameters_file": None,
+                "work_dir": str(work_dir),
+            }
+
+            with mock.patch("asyncio.create_subprocess_exec") as mock_subprocess:
+                mock_proc = mock.AsyncMock()
+                mock_proc.returncode = 1
+                mock_proc.communicate = mock.AsyncMock(return_value=(b"", b"apply failed"))
+                mock_subprocess.return_value = mock_proc
+
+                result = await adapter.apply("plan-3")
+
+            assert result.success is False
+            assert "plan-3" not in adapter._plan_storage
+            assert not work_dir.exists()
+
+    @pytest.mark.asyncio
     async def test_plan_cleans_tempdir_on_failure(self, adapter: BicepInfraProviderAdapter, sample_files: list[dict]) -> None:
         from pathlib import Path
         import tempfile
