@@ -36,7 +36,7 @@ class TestFormatCheck:
             assert result.valid is True
             assert result.errors == []
             assert result.warnings == []
-            _, args, _ = mock_subprocess.mock_calls[0]
+            args = mock_subprocess.call_args.args
             assert list(args[:3]) == ["bicep", "format", "--verify"]
 
 
@@ -53,7 +53,7 @@ class TestValidate:
 
             assert result.valid is False
             assert result.errors
-            _, args, _ = mock_subprocess.mock_calls[0]
+            args = mock_subprocess.call_args.args
             assert list(args[:4]) == ["bicep", "build", "--stdout", "--no-restore"]
 
 
@@ -111,9 +111,14 @@ class TestPlanApply:
             assert result.success is True
             assert result.resources_to_create == 1
             assert result.resources_to_modify == 1
-            _, args, _ = mock_subprocess.mock_calls[0]
+            args = mock_subprocess.call_args.args
             assert list(args[:4]) == ["az", "deployment", "group", "what-if"]
-            assert adapter._plan_storage
+            assert len(adapter._plan_storage) == 1
+            stored = next(iter(adapter._plan_storage.values()))
+            assert stored["resource_group"] == "rg-test"
+            assert stored["deployment_name"] == "dep-test"
+            assert stored["template_file"] is not None
+            assert stored["work_dir"] is not None
 
     @pytest.mark.asyncio
     async def test_apply_uses_group_create(self, adapter: BicepInfraProviderAdapter) -> None:
@@ -134,7 +139,7 @@ class TestPlanApply:
             result = await adapter.apply("plan-1")
 
             assert result.success is True
-            _, args, _ = mock_subprocess.mock_calls[0]
+            args = mock_subprocess.call_args.args
             assert list(args[:4]) == ["az", "deployment", "group", "create"]
 
 

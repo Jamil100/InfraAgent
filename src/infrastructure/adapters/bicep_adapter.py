@@ -133,8 +133,7 @@ class BicepInfraProviderAdapter(IInfraProviderPort):
             )
 
         plan_id = str(uuid.uuid4())
-        tmpdir = Path(tempfile.gettempdir()) / f"bicep_plan_{plan_id}"
-        tmpdir.mkdir(parents=True, exist_ok=True)
+        tmpdir = Path(tempfile.mkdtemp(prefix=f"bicep_plan_{plan_id}_"))
 
         try:
             bicep_files = self._write_files(files, tmpdir)
@@ -273,7 +272,10 @@ class BicepInfraProviderAdapter(IInfraProviderPort):
         finally:
             self._plan_storage.pop(plan_id, None)
             if work_dir and Path(work_dir).exists():
-                shutil.rmtree(work_dir, ignore_errors=True)
+                try:
+                    shutil.rmtree(work_dir)
+                except OSError as exc:
+                    self.logger.warning("Failed to clean up plan directory %s: %s", work_dir, exc)
 
     def get_language(self) -> str:
         return "bicep"
